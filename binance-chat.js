@@ -96,38 +96,86 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+// invoice-api.js
+const express = require('express');
+const bodyParser = require('body-parser');
+const puppeteer = require('puppeteer');
+
+const app = express();
+app.use(bodyParser.json({ limit: '1mb' }));
+
 /**
- * Endpoint: /convert-svg
- * Converts SVG string to JPG Base64
+ * Endpoint: /generate-receipt
+ * Input JSON example:
+ * {
+ *   "date": "2025-09-12",
+ *   "name": "John Doe",
+ *   "account": "1234567890",
+ *   "ifsc": "ABCD0123456",
+ *   "utr": "TXN123",
+ *   "transactionId": "EXT456",
+ *   "status": "Success",
+ *   "transactionType": "IMPS"
+ * }
  */
-app.post('/convert-svg', async (req, res) => {
-  const { svg } = req.body;
-  if (!svg) return res.status(400).json({ success: false, message: 'SVG is required' });
+app.post('/generate-receipt', async (req, res) => {
+  const data = req.body;
+
+  // Validate required fields
+  const requiredFields = ['date', 'name', 'account', 'ifsc', 'utr', 'transactionId', 'status', 'transactionType'];
+  for (const field of requiredFields) {
+    if (!data[field]) return res.status(400).json({ success: false, message: `Missing field: ${field}` });
+  }
+
+  // Build HTML using your old template
+  const html = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; background: #f9f9f9; margin:0; padding:20px; }
+          .receipt { width: 500px; margin: auto; border: 3px solid #FF8C00; border-radius: 10px; padding: 20px; background: #fff; }
+          h2 { text-align: center; color: #FF8C00; }
+          .row { display: flex; justify-content: space-between; margin: 10px 0; }
+          .label { font-weight: bold; }
+          hr { border: 0; border-top: 1px solid #ddd; margin: 10px 0; }
+          .footer { text-align: center; font-size: 12px; color: #888; margin-top: 20px; }
+          .status { font-weight: bold; color: ${data.status.toLowerCase() === 'success' ? 'green' : 'red'}; }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <h2>Transaction Receipt</h2>
+          <div class="row"><span class="label">Date</span><span>${data.date}</span></div><hr/>
+          <div class="row"><span class="label">Customer Name</span><span>${data.name}</span></div><hr/>
+          <div class="row"><span class="label">Bank Account Number</span><span>${data.account}</span></div><hr/>
+          <div class="row"><span class="label">IFSC Code</span><span>${data.ifsc}</span></div><hr/>
+          <div class="row"><span class="label">UTR</span><span>${data.utr}</span></div><hr/>
+          <div class="row"><span class="label">Transaction ID</span><span>${data.transactionId}</span></div><hr/>
+          <div class="row"><span class="label">Transaction Type</span><span>${data.transactionType}</span></div><hr/>
+          <div class="row"><span class="label">Status</span><span class="status">${data.status}</span></div>
+          <div class="footer">This is a computer-generated receipt. No signature required.</div>
+        </div>
+      </body>
+    </html>
+  `;
 
   try {
-    const sharp = require('sharp');
-    const buffer = Buffer.from(svg);
-    const jpgBuffer = await sharp(buffer)
-      .jpeg()
-      .toBuffer();
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pngBuffer = await page.screenshot({ type: 'png' });
+    await browser.close();
 
     res.json({
       success: true,
-      data: jpgBuffer.toString('base64'),
-      mimeType: 'image/jpeg',
+      data: pngBuffer.toString('base64'),
+      mimeType: 'image/png',
     });
   } catch (err) {
-    console.error('Sharp conversion error:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to convert SVG to JPG',
-      error: err.message,
-    });
+    console.error('Receipt generation error:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate receipt', error: err.message });
   }
 });
 
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Binance WebSocket Messenger + SVG Converter running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Receipt API running on port ${PORT}`));
