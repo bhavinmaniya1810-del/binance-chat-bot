@@ -8,7 +8,7 @@ const app = express();
 app.use(bodyParser.json());
 
 /**
- * Helper: Send payload over WebSocket with timeout
+ * Helper: Send payload  over WebSocket with timeout
  */
 function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
