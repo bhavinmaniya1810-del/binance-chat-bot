@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const sharp = require('sharp');
 
 const app = express();
-app.use(bodyParser.json({ limit: '10mb' })); // increased limit for SVG content
+app.use(bodyParser.json());
 
 /**
  * Helper: Send payload over WebSocket with timeout
@@ -56,7 +56,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 }
 
 /**
- * Existing endpoint: /send-message
+ * Endpoint: /send-message
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
@@ -97,19 +97,17 @@ app.post('/send-message', async (req, res) => {
 });
 
 /**
- * New endpoint: /convert-svg
- * Converts an SVG string to JPG and returns Base64
+ * Endpoint: /convert-svg
+ * Converts SVG string to JPG Base64
  */
 app.post('/convert-svg', async (req, res) => {
+  const { svg } = req.body;
+
+  if (!svg) return res.status(400).json({ success: false, message: 'SVG required' });
+
   try {
-    const { svg } = req.body;
-
-    if (!svg) {
-      return res.status(400).json({ success: false, message: 'SVG content is required' });
-    }
-
-    // Convert SVG to JPG using sharp
-    const jpgBuffer = await sharp(Buffer.from(svg))
+    const jpgBuffer = await sharp(Buffer.from(svg, 'utf-8'))
+      .resize(500) // optional: fix width
       .jpeg({ quality: 90 })
       .toBuffer();
 
@@ -118,11 +116,15 @@ app.post('/convert-svg', async (req, res) => {
     res.json({
       success: true,
       jpgBase64,
-      mimeType: 'image/jpeg'
+      mimeType: 'image/jpeg',
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Failed to convert SVG to JPG', error: error.message });
+  } catch (err) {
+    console.error('Error converting SVG to JPG:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to convert SVG to JPG',
+      error: err.message,
+    });
   }
 });
 
