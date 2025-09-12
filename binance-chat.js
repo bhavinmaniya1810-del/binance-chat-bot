@@ -57,6 +57,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 
 /**
  * Endpoint: /send-message
+ * Sends a chat message via Binance WebSocket
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
@@ -72,7 +73,7 @@ app.post('/send-message', async (req, res) => {
     }
     content = `Hi, payment has been successfully processed.\nAmount: ${amount}\nUTR/Transaction ID: ${utr}\nPlease confirm once you receive it. Thank you!`;
   } else if (type === 'cancel') {
-    content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
+    content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order. Thanks!`;
   } else {
     return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: success, cancel' });
   }
@@ -96,86 +97,59 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
-// invoice-api.js
-const express = require('express');
-const bodyParser = require('body-parser');
-const puppeteer = require('puppeteer');
-
-const app = express();
-app.use(bodyParser.json({ limit: '1mb' }));
-
 /**
- * Endpoint: /generate-receipt
- * Input JSON example:
- * {
- *   "date": "2025-09-12",
- *   "name": "John Doe",
- *   "account": "1234567890",
- *   "ifsc": "ABCD0123456",
- *   "utr": "TXN123",
- *   "transactionId": "EXT456",
- *   "status": "Success",
- *   "transactionType": "IMPS"
- * }
+ * Endpoint: /invoice-png
+ * Converts invoice JSON → ready PNG (base64)
  */
-app.post('/generate-receipt', async (req, res) => {
+app.post('/invoice-png', async (req, res) => {
   const data = req.body;
+  if (!data) return res.status(400).json({ success: false, message: 'Invoice JSON is required' });
 
-  // Validate required fields
-  const requiredFields = ['date', 'name', 'account', 'ifsc', 'utr', 'transactionId', 'status', 'transactionType'];
-  for (const field of requiredFields) {
-    if (!data[field]) return res.status(400).json({ success: false, message: `Missing field: ${field}` });
-  }
-
-  // Build HTML using your old template
+  // Simple HTML invoice
   const html = `
-    <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; background: #f9f9f9; margin:0; padding:20px; }
-          .receipt { width: 500px; margin: auto; border: 3px solid #FF8C00; border-radius: 10px; padding: 20px; background: #fff; }
-          h2 { text-align: center; color: #FF8C00; }
-          .row { display: flex; justify-content: space-between; margin: 10px 0; }
-          .label { font-weight: bold; }
-          hr { border: 0; border-top: 1px solid #ddd; margin: 10px 0; }
-          .footer { text-align: center; font-size: 12px; color: #888; margin-top: 20px; }
-          .status { font-weight: bold; color: ${data.status.toLowerCase() === 'success' ? 'green' : 'red'}; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <h2>Transaction Receipt</h2>
-          <div class="row"><span class="label">Date</span><span>${data.date}</span></div><hr/>
-          <div class="row"><span class="label">Customer Name</span><span>${data.name}</span></div><hr/>
-          <div class="row"><span class="label">Bank Account Number</span><span>${data.account}</span></div><hr/>
-          <div class="row"><span class="label">IFSC Code</span><span>${data.ifsc}</span></div><hr/>
-          <div class="row"><span class="label">UTR</span><span>${data.utr}</span></div><hr/>
-          <div class="row"><span class="label">Transaction ID</span><span>${data.transactionId}</span></div><hr/>
-          <div class="row"><span class="label">Transaction Type</span><span>${data.transactionType}</span></div><hr/>
-          <div class="row"><span class="label">Status</span><span class="status">${data.status}</span></div>
-          <div class="footer">This is a computer-generated receipt. No signature required.</div>
-        </div>
-      </body>
-    </html>
-  `;
+  <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; background: #f9f9f9; width: 500px; height: 440px; margin:0; padding:20px; border:3px solid #FF8C00; border-radius:10px;}
+        h1 { color: #FF8C00; text-align:center; }
+        .row { display:flex; justify-content: space-between; margin:8px 0; }
+        .label { font-weight:bold; }
+        .status { font-weight:bold; color:${data.status.toLowerCase() === 'success' ? 'green' : 'red'}; }
+        footer { text-align:center; font-size:12px; color:#888; margin-top:20px; }
+      </style>
+    </head>
+    <body>
+      <h1>Transaction Receipt</h1>
+      <div class="row"><span class="label">Date</span><span>${data.date || ''}</span></div>
+      <div class="row"><span class="label">Customer Name</span><span>${data.name || ''}</span></div>
+      <div class="row"><span class="label">Bank Account</span><span>${data.account || ''}</span></div>
+      <div class="row"><span class="label">IFSC Code</span><span>${data.ifsc || ''}</span></div>
+      <div class="row"><span class="label">UTR</span><span>${data.utr || ''}</span></div>
+      <div class="row"><span class="label">Transaction ID</span><span>${data.transactionId || ''}</span></div>
+      <div class="row"><span class="label">Transaction Type</span><span>${data.transactionType || ''}</span></div>
+      <div class="row"><span class="label">Status</span><span class="status">${data.status || ''}</span></div>
+      <footer>This is a computer-generated receipt. No signature required.</footer>
+    </body>
+  </html>`;
 
   try {
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pngBuffer = await page.screenshot({ type: 'png' });
-    await browser.close();
+    // Convert HTML → PNG using Sharp
+    const pngBuffer = await sharp(Buffer.from(html))
+      .png()
+      .toBuffer();
 
     res.json({
       success: true,
       data: pngBuffer.toString('base64'),
-      mimeType: 'image/png',
+      mimeType: 'image/png'
     });
   } catch (err) {
-    console.error('Receipt generation error:', err);
-    res.status(500).json({ success: false, message: 'Failed to generate receipt', error: err.message });
+    console.error('Invoice conversion error:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate PNG', error: err.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Receipt API running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Binance WebSocket + Invoice PNG API running on port ${PORT}`);
+});
