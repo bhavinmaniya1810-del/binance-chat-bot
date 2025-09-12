@@ -4,5 +4,5 @@
   "description": "Binance C2C chat WebSocket messenger for payment notifications",
   "main": "binance-chat.js",
   "scripts": {
-    "start": "node binance-chat.js"
+  "start": "node binance-chat.js"
 }
