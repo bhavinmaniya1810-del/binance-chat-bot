@@ -101,7 +101,7 @@ app.post('/send-message', async (req, res) => {
  * Converts SVG string to JPG Base64
  */
 app.post('/convert-svg', async (req, res) => {
-  const { svg } = req.body;
+  const { svg } = req.body.spg;
 
   if (!svg) return res.status(400).json({ success: false, message: 'SVG required' });
 
