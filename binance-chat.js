@@ -2,7 +2,7 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const sharp = require('sharp');
+const puppeteer = require('puppeteer');
 
 const app = express();
 app.use(bodyParser.json());
@@ -99,7 +99,7 @@ app.post('/send-message', async (req, res) => {
 
 /**
  * Endpoint: /invoice-png
- * Converts invoice JSON → ready PNG (base64)
+ * Converts invoice JSON → ready PNG (Base64)
  */
 app.post('/invoice-png', async (req, res) => {
   const data = req.body;
@@ -111,7 +111,7 @@ app.post('/invoice-png', async (req, res) => {
     <head>
       <style>
         body { font-family: Arial, sans-serif; background: #f9f9f9; width: 500px; height: 440px; margin:0; padding:20px; border:3px solid #FF8C00; border-radius:10px;}
-        h1 { color: #FF8C00; text-align:center; }
+        h1 { color: #FF8C00; text-align:center; margin-bottom:20px; }
         .row { display:flex; justify-content: space-between; margin:8px 0; }
         .label { font-weight:bold; }
         .status { font-weight:bold; color:${data.status.toLowerCase() === 'success' ? 'green' : 'red'}; }
@@ -133,10 +133,14 @@ app.post('/invoice-png', async (req, res) => {
   </html>`;
 
   try {
-    // Convert HTML → PNG using Sharp
-    const pngBuffer = await sharp(Buffer.from(html))
-      .png()
-      .toBuffer();
+    const browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const pngBuffer = await page.screenshot({ type: 'png' });
+    await browser.close();
 
     res.json({
       success: true,
