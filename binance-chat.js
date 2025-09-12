@@ -2,9 +2,10 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
+const sharp = require('sharp');
 
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' })); // increased limit for SVG content
 
 /**
  * Helper: Send payload over WebSocket with timeout
@@ -55,23 +56,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 }
 
 /**
- * Single endpoint: /send-message
- * 
- * Body example for success:
- * {
- *   "type": "success",
- *   "chatWssUrl": "wss://binance-chat-ws/abcd123",
- *   "orderNo": "ORDER-100",
- *   "amount": "500.00",
- *   "utr": "TXN123456"
- * }
- * 
- * Body example for cancel:
- * {
- *   "type": "cancel",
- *   "chatWssUrl": "wss://binance-chat-ws/abcd123",
- *   "orderNo": "ORDER-101"
- * }
+ * Existing endpoint: /send-message
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
@@ -111,7 +96,37 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+/**
+ * New endpoint: /convert-svg
+ * Converts an SVG string to JPG and returns Base64
+ */
+app.post('/convert-svg', async (req, res) => {
+  try {
+    const { svg } = req.body;
+
+    if (!svg) {
+      return res.status(400).json({ success: false, message: 'SVG content is required' });
+    }
+
+    // Convert SVG to JPG using sharp
+    const jpgBuffer = await sharp(Buffer.from(svg))
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    const jpgBase64 = jpgBuffer.toString('base64');
+
+    res.json({
+      success: true,
+      jpgBase64,
+      mimeType: 'image/jpeg'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Failed to convert SVG to JPG', error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Binance WebSocket Messenger running on port ${PORT}`);
+  console.log(`✅ Binance WebSocket Messenger + SVG Converter running on port ${PORT}`);
 });
