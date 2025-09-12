@@ -101,25 +101,23 @@ app.post('/send-message', async (req, res) => {
  * Converts SVG string to JPG Base64
  */
 app.post('/convert-svg', async (req, res) => {
-  const { svg } = req.body.spg;
-
-  if (!svg) return res.status(400).json({ success: false, message: 'SVG required' });
+  const { svg } = req.body;
+  if (!svg) return res.status(400).json({ success: false, message: 'SVG is required' });
 
   try {
-    const jpgBuffer = await sharp(Buffer.from(svg, 'utf-8'))
-      .resize(500) // optional: fix width
-      .jpeg({ quality: 90 })
+    const sharp = require('sharp');
+    const buffer = Buffer.from(svg);
+    const jpgBuffer = await sharp(buffer)
+      .jpeg()
       .toBuffer();
-
-    const jpgBase64 = jpgBuffer.toString('base64');
 
     res.json({
       success: true,
-      jpgBase64,
+      data: jpgBuffer.toString('base64'),
       mimeType: 'image/jpeg',
     });
   } catch (err) {
-    console.error('Error converting SVG to JPG:', err);
+    console.error('Sharp conversion error:', err);
     res.status(500).json({
       success: false,
       message: 'Failed to convert SVG to JPG',
@@ -127,6 +125,7 @@ app.post('/convert-svg', async (req, res) => {
     });
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
