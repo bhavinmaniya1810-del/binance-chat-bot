@@ -11,7 +11,6 @@ app.use(bodyParser.json({ limit: '20mb' })); // Allow large payloads
 function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
         if (!chatWssUrl) return reject(new Error('chatWssUrl is required'));
-
         const ws = new WebSocket(chatWssUrl);
         let finished = false;
 
@@ -53,7 +52,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     });
 }
 
-// -------------------- Receipt PNG Generation as Base64 -----------------------
+// -------------------- Receipt PNG Generation (Binary) -----------------------
 app.post('/convert-receipt', async (req, res) => {
     try {
         const data = req.body;
@@ -150,31 +149,29 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
 </html>
 `;
 
+        // Launch Puppeteer
         const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
         const page = await browser.newPage();
 
-        // Set exact viewport + high deviceScaleFactor for sharp text
+        // Set viewport for high-resolution rendering
         await page.setViewport({
             width: 1000,
             height: 392,
-            deviceScaleFactor: 2
+            deviceScaleFactor: 2  // Improves text sharpness
         });
 
         await page.setContent(html, { waitUntil: 'networkidle0' });
 
-        // Screenshot only the viewport, not full page
-        const pngBuffer = await page.screenshot({ type: 'png' });
+        // Screenshot the container only
+        const container = await page.$('.receipt-container');
+        const pngBuffer = await container.screenshot({ type: 'png' });
 
         await browser.close();
 
-        const base64Image = pngBuffer.toString('base64');
-
-        res.json({
-            success: true,
-            mimeType: 'image/png',
-            fileName: 'receipt.png',
-            base64: base64Image
-        });
+        // Send binary directly for n8n Telegram
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Disposition', 'attachment; filename="receipt.png"');
+        res.send(pngBuffer);
 
     } catch (err) {
         console.error(err);
