@@ -1,14 +1,13 @@
-// binance-chat.js
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const nodeHtmlToImage = require('node-html-to-image'); // <-- install: npm i node-html-to-image
+const { createCanvas } = require('canvas'); // <-- install: npm i canvas
 
 const app = express();
 app.use(bodyParser.json());
 
 /**
- * Existing WebSocket Helper
+ * Helper: Send payload over WebSocket with timeout
  */
 async function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
@@ -55,10 +54,11 @@ async function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 }
 
 /**
- * Existing Endpoint
+ * Existing endpoint: /send-message
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
+
   if (!type || !chatWssUrl) {
     return res.status(400).json({ success: false, message: 'Missing required parameters: type, chatWssUrl' });
   }
@@ -95,7 +95,8 @@ app.post('/send-message', async (req, res) => {
 });
 
 /**
- * 🆕 New Endpoint: /generate-receipt (No Puppeteer)
+ * 🆕 New endpoint: /generate-receipt
+ * Uses Canvas (no chromium required)
  */
 app.post('/generate-receipt', async (req, res) => {
   try {
@@ -105,53 +106,69 @@ app.post('/generate-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing one or more required fields.' });
     }
 
-    // Prepare HTML dynamically
-    const html = `
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <style>
-        /* Paste the CSS from your template here */
-        body { font-family: Arial, sans-serif; background: #fff; }
-        .receipt-container { width: 800px; border: 1px solid #ddd; padding: 20px; border-radius: 10px; }
-        h2 { margin: 0; font-size: 20px; }
-        .amount { font-size: 24px; font-weight: bold; margin-top: 10px; }
-        .detail-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
-        .detail-label { font-size: 12px; color: #888; text-transform: uppercase; }
-        .detail-value { font-weight: bold; }
-      </style>
-    </head>
-    <body>
-      <div class="receipt-container">
-        <h2>${name}</h2>
-        <div class="amount">${status}</div>
-        <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">${date}</span></div>
-        <div class="detail-row"><span class="detail-label">Account</span><span class="detail-value">${account}</span></div>
-        <div class="detail-row"><span class="detail-label">IFSC</span><span class="detail-value">${ifsc}</span></div>
-        <div class="detail-row"><span class="detail-label">UTR</span><span class="detail-value">${utr}</span></div>
-        <div class="detail-row"><span class="detail-label">Transaction ID</span><span class="detail-value">${transactionId}</span></div>
-        <div class="detail-row"><span class="detail-label">Transaction Type</span><span class="detail-value">${transactionType}</span></div>
-      </div>
-    </body>
-    </html>`;
+    // ---- Canvas setup ----
+    const width = 1000;
+    const height = 400;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
 
-    // Generate PNG from HTML
-    const imageBuffer = await nodeHtmlToImage({
-      html,
-      quality: 100,
-      type: 'png',
-      encoding: 'buffer'
+    // Background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
+    // Border
+    ctx.strokeStyle = "#e8e8e8";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, width, height);
+
+    // Title
+    ctx.fillStyle = "#000000";
+    ctx.font = "bold 30px Arial";
+    ctx.fillText("Transfer Receipt", 30, 50);
+
+    // Status
+    ctx.fillStyle = status.toLowerCase() === "success" ? "#16a34a" : "#dc2626";
+    ctx.font = "bold 24px Arial";
+    ctx.fillText(`Status: ${status}`, 30, 90);
+
+    // Draw details
+    ctx.fillStyle = "#000";
+    ctx.font = "20px Arial";
+    const lineHeight = 35;
+    let y = 140;
+
+    const details = [
+      ["Date", date],
+      ["Recipient Name", name],
+      ["Account", account],
+      ["IFSC", ifsc],
+      ["UTR", utr],
+      ["Transaction ID", transactionId],
+      ["Transaction Type", transactionType],
+    ];
+
+    details.forEach(([label, value]) => {
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "bold 18px Arial";
+      ctx.fillText(`${label}:`, 30, y);
+      ctx.fillStyle = "#000000";
+      ctx.font = "18px Arial";
+      ctx.fillText(`${value}`, 250, y);
+      y += lineHeight;
     });
 
-    const base64Image = imageBuffer.toString('base64');
+    // ---- Export to Base64 ----
+    const buffer = canvas.toBuffer("image/png");
+    const base64Image = buffer.toString("base64");
+
     return res.json({
       success: true,
-      image: `data:image/png;base64,${base64Image}`
+      image: `data:image/png;base64,${base64Image}`,
     });
 
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, message: error.message });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
