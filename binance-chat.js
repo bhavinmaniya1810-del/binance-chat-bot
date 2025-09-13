@@ -2,18 +2,17 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const puppeteer = require('puppeteer'); // <- install this: npm i puppeteer
+const nodeHtmlToImage = require('node-html-to-image'); // <-- install: npm i node-html-to-image
 
 const app = express();
 app.use(bodyParser.json());
 
 /**
- * Helper: Send payload over WebSocket with timeout
+ * Existing WebSocket Helper
  */
 async function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     if (!chatWssUrl) return reject(new Error('chatWssUrl is required'));
-
     const ws = new WebSocket(chatWssUrl);
     let finished = false;
 
@@ -56,11 +55,10 @@ async function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 }
 
 /**
- * Existing endpoint: /send-message
+ * Existing Endpoint
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
-
   if (!type || !chatWssUrl) {
     return res.status(400).json({ success: false, message: 'Missing required parameters: type, chatWssUrl' });
   }
@@ -97,8 +95,7 @@ app.post('/send-message', async (req, res) => {
 });
 
 /**
- * 🆕 New Endpoint: /generate-receipt
- * Accepts JSON body with receipt details and returns base64 image
+ * 🆕 New Endpoint: /generate-receipt (No Puppeteer)
  */
 app.post('/generate-receipt', async (req, res) => {
   try {
@@ -108,50 +105,53 @@ app.post('/generate-receipt', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing one or more required fields.' });
     }
 
-    // 1️⃣ Prepare dynamic HTML
+    // Prepare HTML dynamically
     const html = `
-      ${/* 👇 insert your full HTML here, replacing values dynamically */''}
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>${/* Use same <style> as your template */''}</style>
-      </head>
-      <body>
-        <script>
-          window.data = ${JSON.stringify({
-            recipientName: name,
-            utr,
-            date,
-            paymentType: transactionType,
-            transactionId,
-            toAccount: account,
-            ifsc
-          })}
-        </script>
-        ${/* Put your template here but call updateReceipt(window.data) at the end */''}
-      </body>
-      </html>
-    `;
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        /* Paste the CSS from your template here */
+        body { font-family: Arial, sans-serif; background: #fff; }
+        .receipt-container { width: 800px; border: 1px solid #ddd; padding: 20px; border-radius: 10px; }
+        h2 { margin: 0; font-size: 20px; }
+        .amount { font-size: 24px; font-weight: bold; margin-top: 10px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+        .detail-label { font-size: 12px; color: #888; text-transform: uppercase; }
+        .detail-value { font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="receipt-container">
+        <h2>${name}</h2>
+        <div class="amount">${status}</div>
+        <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">${date}</span></div>
+        <div class="detail-row"><span class="detail-label">Account</span><span class="detail-value">${account}</span></div>
+        <div class="detail-row"><span class="detail-label">IFSC</span><span class="detail-value">${ifsc}</span></div>
+        <div class="detail-row"><span class="detail-label">UTR</span><span class="detail-value">${utr}</span></div>
+        <div class="detail-row"><span class="detail-label">Transaction ID</span><span class="detail-value">${transactionId}</span></div>
+        <div class="detail-row"><span class="detail-label">Transaction Type</span><span class="detail-value">${transactionType}</span></div>
+      </div>
+    </body>
+    </html>`;
 
-    // 2️⃣ Launch Puppeteer and generate screenshot
-    const browser = await puppeteer.launch({ headless: 'new' });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // Generate PNG from HTML
+    const imageBuffer = await nodeHtmlToImage({
+      html,
+      quality: 100,
+      type: 'png',
+      encoding: 'buffer'
+    });
 
-    const screenshotBuffer = await page.screenshot({ type: 'png' });
-    await browser.close();
-
-    // 3️⃣ Convert to base64 and return
-    const base64Image = screenshotBuffer.toString('base64');
-
-    res.json({
+    const base64Image = imageBuffer.toString('base64');
+    return res.json({
       success: true,
       image: `data:image/png;base64,${base64Image}`
     });
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
