@@ -88,8 +88,9 @@ app.post('/send-message', async (req, res) => {
 // -------------------- Receipt SVG to PNG API -----------------------
 app.post('/convert-receipt', async (req, res) => {
     try {
-        const data = req.body.data;
-        if (!data) return res.status(400).json({ success: false, message: 'Data is required' });
+        const data = req.body;  // take body directly
+if (!data || Object.keys(data).length === 0) return res.status(400).json({ success: false, message: 'Data is required' });
+      
 
         const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="392">
