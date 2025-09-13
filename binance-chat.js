@@ -157,7 +157,7 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
         await page.setViewport({
             width: 1000,
             height: 392,
-            deviceScaleFactor: 3
+            deviceScaleFactor: 2
         });
 
         await page.setContent(html, { waitUntil: 'networkidle0' });
