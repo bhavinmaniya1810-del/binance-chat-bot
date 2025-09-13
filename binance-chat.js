@@ -2,7 +2,7 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const sharp = require('sharp');
+const { Resvg } = require('@resvg/resvg-js');
 
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' })); // Allow large SVGs
@@ -68,7 +68,7 @@ app.post('/send-message', async (req, res) => {
         }
         content = `Hi, payment has been successfully processed.\nAmount: ${amount}\nUTR/Transaction ID: ${utr}\nPlease confirm once you receive it. Thank you!`;
     } else if (type === 'cancel') {
-        content = `Hi, I had to cancel the order because the bank details provided were incorrect.Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
+        content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
     } else {
         return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: success, cancel' });
     }
@@ -98,20 +98,18 @@ app.post('/convert-svg', async (req, res) => {
         const { svgBase64 } = req.body;
         if (!svgBase64) return res.status(400).json({ success: false, message: 'svgBase64 is required' });
 
-        // Decode SVG Base64
+        // Decode Base64
         const svgBuffer = Buffer.from(svgBase64, 'base64');
 
-        // Convert to PNG
-        const pngBuffer = await sharp(svgBuffer).png().toBuffer();
-
-        // Encode PNG to Base64
-        const pngBase64 = pngBuffer.toString('base64');
+        // Render SVG to PNG using Resvg
+        const resvg = new Resvg(svgBuffer);
+        const pngBuffer = resvg.render().asPng();
 
         return res.status(200).json({
             success: true,
             mimeType: 'image/png',
             fileName: 'receipt.png',
-            pngBase64
+            pngBase64: pngBuffer.toString('base64'),
         });
     } catch (err) {
         console.error(err);
