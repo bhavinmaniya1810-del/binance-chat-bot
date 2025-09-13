@@ -2,6 +2,7 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
+const puppeteer = require('puppeteer'); // <- install this: npm i puppeteer
 
 const app = express();
 app.use(bodyParser.json());
@@ -9,7 +10,7 @@ app.use(bodyParser.json());
 /**
  * Helper: Send payload over WebSocket with timeout
  */
-function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
+async function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     if (!chatWssUrl) return reject(new Error('chatWssUrl is required'));
 
@@ -55,23 +56,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
 }
 
 /**
- * Single endpoint: /send-message
- * 
- * Body example for success:
- * {
- *   "type": "success",
- *   "chatWssUrl": "wss://binance-chat-ws/abcd123",
- *   "orderNo": "ORDER-100",
- *   "amount": "500.00",
- *   "utr": "TXN123456"
- * }
- * 
- * Body example for cancel:
- * {
- *   "type": "cancel",
- *   "chatWssUrl": "wss://binance-chat-ws/abcd123",
- *   "orderNo": "ORDER-101"
- * }
+ * Existing endpoint: /send-message
  */
 app.post('/send-message', async (req, res) => {
   const { type, chatWssUrl, orderNo, amount, utr } = req.body;
@@ -111,7 +96,64 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Binance WebSocket Messenger running on port ${PORT}`);
+/**
+ * 🆕 New Endpoint: /generate-receipt
+ * Accepts JSON body with receipt details and returns base64 image
+ */
+app.post('/generate-receipt', async (req, res) => {
+  try {
+    const { date, name, account, ifsc, utr, transactionId, status, transactionType } = req.body;
+
+    if (!date || !name || !account || !ifsc || !utr || !transactionId || !status || !transactionType) {
+      return res.status(400).json({ success: false, message: 'Missing one or more required fields.' });
+    }
+
+    // 1️⃣ Prepare dynamic HTML
+    const html = `
+      ${/* 👇 insert your full HTML here, replacing values dynamically */''}
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>${/* Use same <style> as your template */''}</style>
+      </head>
+      <body>
+        <script>
+          window.data = ${JSON.stringify({
+            recipientName: name,
+            utr,
+            date,
+            paymentType: transactionType,
+            transactionId,
+            toAccount: account,
+            ifsc
+          })}
+        </script>
+        ${/* Put your template here but call updateReceipt(window.data) at the end */''}
+      </body>
+      </html>
+    `;
+
+    // 2️⃣ Launch Puppeteer and generate screenshot
+    const browser = await puppeteer.launch({ headless: 'new' });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const screenshotBuffer = await page.screenshot({ type: 'png' });
+    await browser.close();
+
+    // 3️⃣ Convert to base64 and return
+    const base64Image = screenshotBuffer.toString('base64');
+
+    res.json({
+      success: true,
+      image: `data:image/png;base64,${base64Image}`
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
