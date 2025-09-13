@@ -1,7 +1,7 @@
 // binance-chat.js
 const express = require('express');
-const WebSocket = require('ws');
 const bodyParser = require('body-parser');
+const WebSocket = require('ws');
 const puppeteer = require('puppeteer');
 
 const app = express();
@@ -53,11 +53,51 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     });
 }
 
-// -------------------- Receipt PNG Generation as Base64 -----------------------
+// -------------------- Send Message Endpoint -----------------------
+app.post('/send-message', async (req, res) => {
+    const { type, chatWssUrl, orderNo, amount, utr } = req.body;
+
+    if (!type || !chatWssUrl) {
+        return res.status(400).json({ success: false, message: 'Missing required parameters: type, chatWssUrl' });
+    }
+
+    let content;
+    if (type === 'success') {
+        if (!orderNo || !amount || !utr) {
+            return res.status(400).json({ success: false, message: 'Missing required parameters for success message: orderNo, amount, utr' });
+        }
+        content = `Hi, payment has been successfully processed.\nAmount: ${amount}\nUTR/Transaction ID: ${utr}\nPlease confirm once you receive it. Thank you!`;
+    } else if (type === 'cancel') {
+        content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
+    } else {
+        return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: success, cancel' });
+    }
+
+    const payload = {
+        type: "text",
+        uuid: `${Date.now()}`,
+        orderNo: orderNo || null,
+        content,
+        self: true,
+        clientType: "web",
+        createTime: Date.now(),
+        sendStatus: 0,
+    };
+
+    try {
+        const result = await sendWsMessage(chatWssUrl, payload);
+        return res.status(200).json(result);
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// -------------------- Receipt PNG Generation Endpoint -----------------------
 app.post('/convert-receipt', async (req, res) => {
     try {
         const data = req.body;
 
+        // HTML template with dynamic fields
         const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -66,7 +106,7 @@ app.post('/convert-receipt', async (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Transfer Receipt</title>
 <style>
-/* --- Paste all your CSS here --- */
+/* --- Paste all your CSS from your receipt here --- */
 * {margin:0;padding:0;box-sizing:border-box;}
 body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;background:#fff;}
 .receipt-container {width:1000px;height:392px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;position:relative;overflow:hidden;}
@@ -84,6 +124,7 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
 .receipt-right {display:flex;flex-direction:column;align-items:flex-end;gap:4px;position:relative;}
 .payment-type {font-size:12px;color:#dc2626;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;line-height:16px;}
 .amount {font-size:26px;font-weight:700;color:#000;line-height:32px;}
+.close-btn {position:absolute;top:-4px;right:-8px;width:20px;height:20px;background:none;border:none;font-size:18px;color:#6b7280;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
 .date-section {height:36px;display:flex;align-items:center;padding:0 32px 0 31px;}
 .date {font-size:16px;font-weight:600;color:#000;line-height:20px;}
 .details-section {height:268px;padding:0 32px 0 31px;display:flex;flex-direction:column;justify-content:space-between;}
@@ -117,6 +158,7 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
         <div class="receipt-right">
             <div class="payment-type">${data.paymentType || ''}</div>
             <div class="amount">${data.amount || ''}</div>
+            <button class="close-btn">×</button>
         </div>
     </div>
     <div class="date-section">
@@ -145,6 +187,9 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
                 <span class="detail-value">${data.recipientName || ''}</span>
             </div>
         </div>
+        <div class="action-section">
+            <button class="action-button">Raise Dispute / Report Fraud</button>
+        </div>
     </div>
 </div>
 </body>
@@ -157,16 +202,8 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
         const pngBuffer = await page.screenshot({ type: 'png', fullPage: true });
         await browser.close();
 
-        // Convert PNG to Base64
-        const base64Image = pngBuffer.toString('base64');
-
-        // Return JSON with Base64
-        res.json({
-            success: true,
-            mimeType: 'image/png',
-            fileName: 'receipt.png',
-            base64: base64Image
-        });
+        res.setHeader('Content-Type', 'image/png');
+        res.send(pngBuffer);
 
     } catch (err) {
         console.error(err);
