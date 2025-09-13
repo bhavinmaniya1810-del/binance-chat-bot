@@ -68,7 +68,7 @@ app.post('/send-message', async (req, res) => {
         }
         content = `Hi, payment has been successfully processed.\nAmount: ${amount}\nUTR/Transaction ID: ${utr}\nPlease confirm once you receive it. Thank you!`;
     } else if (type === 'cancel') {
-        content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
+        content = `Hi,I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
     } else {
         return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: success, cancel' });
     }
