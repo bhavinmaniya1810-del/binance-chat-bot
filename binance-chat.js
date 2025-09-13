@@ -3,12 +3,11 @@ const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
-const fs = require('fs');
 
 const app = express();
-app.use(bodyParser.json({ limit: '10mb' })); // Allow large SVGs
+app.use(bodyParser.json({ limit: '10mb' })); // Allow large JSON payloads
 
-// -------------------- Binance WebSocket Messenger -----------------------
+// -------------------- Helper: Send payload over WebSocket -----------------------
 function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
         if (!chatWssUrl) return reject(new Error('chatWssUrl is required'));
@@ -28,10 +27,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
                 clearTimeout(timer);
                 if (finished) return;
                 finished = true;
-                if (err) {
-                    try { ws.terminate(); } catch {}
-                    return reject(err);
-                }
+                if (err) { try { ws.terminate(); } catch {}; return reject(err); }
                 try { ws.close(); } catch {}
                 resolve({ success: true, sent: payload });
             });
@@ -54,7 +50,7 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     });
 }
 
-// -------------------- Send Message Endpoint -----------------------
+// -------------------- Endpoint: Send Chat Message -----------------------
 app.post('/send-message', async (req, res) => {
     const { type, chatWssUrl, orderNo, amount, utr } = req.body;
 
@@ -93,28 +89,55 @@ app.post('/send-message', async (req, res) => {
     }
 });
 
-// -------------------- SVG to PNG Conversion Endpoint -----------------------
-app.post('/convert-svg', async (req, res) => {
+// -------------------- Endpoint: Convert Receipt JSON → PNG -----------------------
+app.post('/convert-receipt', async (req, res) => {
     try {
-        const { svgBase64 } = req.body;
-        if (!svgBase64) return res.status(400).json({ success: false, message: 'svgBase64 is required' });
+        const data = req.body;
 
-        const svgContent = Buffer.from(svgBase64, 'base64').toString('utf-8');
+        // HTML template for receipt
+        const html = `
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .receipt { width: 800px; border: 1px solid #ddd; padding: 20px; border-radius: 8px; }
+            h2 { text-align: center; color: #dc2626; }
+            .row { display: flex; justify-content: space-between; margin: 8px 0; }
+            .label { font-weight: bold; width: 200px; }
+            .status { font-weight: bold; color: ${data.status === 'Success' ? 'green' : 'red'}; }
+            .footer { text-align: center; font-size: 12px; color: #888; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="receipt">
+            <h2>Transfer Receipt</h2>
+            <div class="row"><div class="label">Recipient Name</div><div>${data.recipientName || ''}</div></div>
+            <div class="row"><div class="label">Date</div><div>${data.date || ''}</div></div>
+            <div class="row"><div class="label">Amount</div><div>${data.amount || ''}</div></div>
+            <div class="row"><div class="label">Payment Type</div><div>${data.paymentType || ''}</div></div>
+            <div class="row"><div class="label">Transaction ID</div><div>${data.transactionId || ''}</div></div>
+            <div class="row"><div class="label">To Account</div><div>${data.toAccount || ''}</div></div>
+            <div class="row"><div class="label">IFSC</div><div>${data.ifsc || ''}</div></div>
+            <div class="row"><div class="label">UTR</div><div>${data.utr || ''}</div></div>
+            <div class="row"><div class="label">Status</div><div class="status">${data.status || ''}</div></div>
+            <div class="footer">This is a computer-generated receipt. No signature required.</div>
+          </div>
+        </body>
+        </html>
+        `;
 
         // Launch Puppeteer
         const browser = await puppeteer.launch({
-            executablePath: '/snap/bin/chromium', // Snap Chromium path
+            executablePath: '/snap/bin/chromium', // Use your installed Chromium path
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
 
-        // Set SVG as page content
-        await page.setContent(svgContent);
-
-        // Take screenshot of the SVG element
-        const element = await page.$('svg');
-        const pngBuffer = await element.screenshot({ omitBackground: true });
+        const receiptElement = await page.$('.receipt');
+        const pngBuffer = await receiptElement.screenshot({ omitBackground: true });
 
         await browser.close();
 
@@ -122,8 +145,9 @@ app.post('/convert-svg', async (req, res) => {
             success: true,
             mimeType: 'image/png',
             fileName: 'receipt.png',
-            pngBase64: pngBuffer.toString('base64')
+            data: pngBuffer.toString('base64')
         });
+
     } catch (err) {
         console.error(err);
         return res.status(500).json({ success: false, message: err.message });
@@ -133,5 +157,5 @@ app.post('/convert-svg', async (req, res) => {
 // -------------------- Start Server -----------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`✅ Binance WebSocket Messenger & SVG → PNG API running on port ${PORT}`);
+    console.log(`✅ Binance WebSocket Messenger & Receipt API running on port ${PORT}`);
 });
