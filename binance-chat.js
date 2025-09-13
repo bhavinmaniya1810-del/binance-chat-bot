@@ -2,7 +2,8 @@
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const { Resvg } = require('@resvg/resvg-js');
+const puppeteer = require('puppeteer');
+const fs = require('fs');
 
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' })); // Allow large SVGs
@@ -68,7 +69,7 @@ app.post('/send-message', async (req, res) => {
         }
         content = `Hi, payment has been successfully processed.\nAmount: ${amount}\nUTR/Transaction ID: ${utr}\nPlease confirm once you receive it. Thank you!`;
     } else if (type === 'cancel') {
-        content = `Hi,I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
+        content = `Hi, I had to cancel the order because the bank details provided were incorrect. Please double-check them and place a new order with the correct information. Let me know once it's done. Thanks!`;
     } else {
         return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: success, cancel' });
     }
@@ -98,18 +99,30 @@ app.post('/convert-svg', async (req, res) => {
         const { svgBase64 } = req.body;
         if (!svgBase64) return res.status(400).json({ success: false, message: 'svgBase64 is required' });
 
-        // Decode Base64
-        const svgBuffer = Buffer.from(svgBase64, 'base64');
+        const svgContent = Buffer.from(svgBase64, 'base64').toString('utf-8');
 
-        // Render SVG to PNG using Resvg
-        const resvg = new Resvg(svgBuffer);
-        const pngBuffer = resvg.render().asPng();
+        // Launch Puppeteer
+        const browser = await puppeteer.launch({
+            executablePath: '/snap/bin/chromium', // Snap Chromium path
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+        const page = await browser.newPage();
+
+        // Set SVG as page content
+        await page.setContent(svgContent);
+
+        // Take screenshot of the SVG element
+        const element = await page.$('svg');
+        const pngBuffer = await element.screenshot({ omitBackground: true });
+
+        await browser.close();
 
         return res.status(200).json({
             success: true,
             mimeType: 'image/png',
             fileName: 'receipt.png',
-            pngBase64: pngBuffer.toString('base64'),
+            pngBase64: pngBuffer.toString('base64')
         });
     } catch (err) {
         console.error(err);
