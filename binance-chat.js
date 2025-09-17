@@ -351,7 +351,7 @@ body {font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-
 
         const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
         const page = await browser.newPage();
-        await page.setViewport({ width: 1000, height: 392, deviceScaleFactor: 3 });
+        await page.setViewport({ width: 1000, height: 392, deviceScaleFactor: 1 });
         await page.setContent(html, { waitUntil: 'networkidle0' });
         const container = await page.$('.receipt-container');
         const pngBuffer = await container.screenshot({ type: 'png' });
