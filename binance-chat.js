@@ -13,10 +13,11 @@ app.use(bodyParser.json({ limit: '20mb' }));
 const BINANCE_API_KEY = 'WKjzN2td6R3hlVd7zqCPC3QH0CzSU455qxamOs70NiOJBTebvLw8iEUDtR86BSNn';
 const BINANCE_API_SECRET = 'U5ZJR02xptdnBq9m8jTymZyDhRkUbSLl7QN58qreAsiP8eTXFtAILJAgyWImX7y4';
 
-// -------------------- WebSocket Messenger (existing code) -----------------------
+// -------------------- Helper: WebSocket send --------------------
 function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
         if (!chatWssUrl) return reject(new Error('chatWssUrl is required'));
+
         const ws = new WebSocket(chatWssUrl);
         let finished = false;
 
@@ -32,10 +33,12 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
                 clearTimeout(timer);
                 if (finished) return;
                 finished = true;
+
                 if (err) {
                     try { ws.terminate(); } catch {}
                     return reject(err);
                 }
+
                 try { ws.close(); } catch {}
                 resolve({ success: true, sent: payload });
             });
@@ -57,6 +60,80 @@ function sendWsMessage(chatWssUrl, payload, timeoutMs = 8000) {
         });
     });
 }
+
+// -------------------- Endpoint: /send-message --------------------
+app.post('/send-message', async (req, res) => {
+    const {
+        type,
+        chatWssUrl,
+        orderNo,
+        amount,
+        utr,
+        imageUrl,
+        thumbnailUrl,
+        imageType,
+        width,
+        height
+    } = req.body;
+
+    if (!type || !chatWssUrl) {
+        return res.status(400).json({ success: false, message: 'Missing required parameters: type, chatWssUrl' });
+    }
+
+    let payload;
+
+    // ---------- IMAGE MESSAGE (Success) ----------
+    if (type === 'image') {
+        // Validate required fields for image
+        if (!orderNo || !imageUrl || !thumbnailUrl || !imageType || !width || !height) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required parameters for image message: orderNo, imageUrl, thumbnailUrl, imageType, width, height'
+            });
+        }
+
+        payload = {
+            type: "image",
+            uuid: Date.now(),
+            orderNo,
+            imageUrl,
+            thumbnailUrl,
+            imageType,
+            width,
+            height,
+            self: true,
+            clientType: "web",
+            createTime: Date.now(),
+            sendStatus: 0
+        };
+
+    // ---------- TEXT MESSAGE (Cancel) ----------
+    } else if (type === 'cancel') {
+        payload = {
+            type: "text",
+            uuid: Date.now(),
+            orderNo: orderNo || null,
+            content: `⚠️ Order${orderNo ? ` #${orderNo}` : ''} was cancelled because the bank details provided were incorrect.\nPlease double-check them and place a new order.`,
+            self: true,
+            clientType: "web",
+            createTime: Date.now(),
+            sendStatus: 0
+        };
+
+    } else {
+        return res.status(400).json({ success: false, message: 'Invalid type. Allowed values: image, cancel' });
+    }
+
+    // ---------- SEND PAYLOAD VIA WEBSOCKET ----------
+    try {
+        const result = await sendWsMessage(chatWssUrl, payload);
+        return res.status(200).json(result);
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
 
 // -------------------- 1. Convert Receipt (existing code) -----------------------
 app.post('/convert-receipt', async (req, res) => {
